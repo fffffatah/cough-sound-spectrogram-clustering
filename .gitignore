@@ -1,0 +1,6 @@
+.idea
+.venv/
+output/
+cough_dataset/
+.venv_BAK/
+__pycache__/
