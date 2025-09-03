@@ -2,5 +2,5 @@
 
 echo "=== COUGH SOUND CLUSTERING ==="
 
-echo "Running ultra-simple clustering..."
-python src/main.py
+echo "Running..."
+python -u src/main.py
