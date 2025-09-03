@@ -1,47 +1,80 @@
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
+import torch.nn.functional as Fun
 from torchvision import transforms
 from PIL import Image
-import os
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, SpectralClustering
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, davies_bouldin_score
 from sklearn.decomposition import PCA
-from sklearn.metrics import confusion_matrix, classification_report
-import seaborn as sns
-import torch.nn.functional as F
 
 def setup():
+    # Device configuration, use CPU if no CUDA enabled GPU is available
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Using: {device}")
+
     return device
+
+def calculate_dataset_stats(files, data_dir):
+    # Calculate mean and std for RGB channels across the dataset, we will need this during Normalization
+    # Basic transform to tensor only
+
+    transform = transforms.Compose([
+        transforms.Resize((128, 128)),
+        transforms.ToTensor()
+    ])
+
+    # Accumulate pixel values for each channel
+    pixel_sum = torch.zeros(3)
+    pixel_squared_sum = torch.zeros(3)
+    num_pixels = 0
+
+    print(f"Calculating stats from {len(files)} images...")
+
+    for i, filename in enumerate(files):
+        if i % 500 == 0:
+            print(f"Processed {i}/{len(files)} images")
+
+        try:
+            img = Image.open(os.path.join(data_dir, filename)).convert('RGB')
+            img_tensor = transform(img)  # [3, 128, 128]
+
+            # Sum across spatial dimensions (H, W)
+            pixel_sum += img_tensor.sum(dim=[1, 2])
+            pixel_squared_sum += (img_tensor ** 2).sum(dim=[1, 2])
+            num_pixels += img_tensor.shape[1] * img_tensor.shape[2]  # H * W
+
+        except Exception as e:
+            print(f"Error processing {filename}: {e}")
+            continue
+
+    # Calculate mean and std
+    mean = pixel_sum / num_pixels
+    std = torch.sqrt((pixel_squared_sum / num_pixels) - (mean ** 2))
+
+    print(f"Dataset statistics:")
+    print(f"Mean: [{mean[0]:.4f}, {mean[1]:.4f}, {mean[2]:.4f}]")
+    print(f"Std:  [{std[0]:.4f}, {std[1]:.4f}, {std[2]:.4f}]")
+
+    return mean.tolist(), std.tolist()
 
 def load_images(data_dir, max_images=34394):
     files = [f for f in os.listdir(data_dir) if f.endswith('.png')][:max_images]
-    
-    # Enhanced preprocessing with data augmentation
-    # transform = transforms.Compose([
-    #     transforms.Resize((128, 128)),  # Smaller size for faster training but better than 64x64
-    #     transforms.ToTensor(),
-    #     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # Better normalization
-    # ])
-    # Spectrogram-specific transforms
-    # transform = transforms.Compose([
-    #     transforms.Resize((128, 128)),
-    #     transforms.ToTensor(),
-    #     # Convert to grayscale
-    #     transforms.Lambda(lambda x: torch.mean(x, dim=0, keepdim=True).repeat(3, 1, 1)),
-    #     transforms.Normalize(mean=[0.485], std=[0.230])
-    # ])
+    # mean, std = calculate_dataset_stats(files, data_dir)
+
+    # Using calculated mean and std for normalization
+    mean = [0.3540, 0.1148, 0.2336]
+    std = [0.3614, 0.1229, 0.2128]
+
     transform = transforms.Compose([
         transforms.Resize((128, 128)),
-        transforms.Grayscale(num_output_channels=1),  # Convert to single channel
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485], std=[0.229])  # Single channel normalization
+        transforms.Normalize(mean=mean, std=std)  # 3 Channel Normalization
     ])
     
     images = []
@@ -52,7 +85,7 @@ def load_images(data_dir, max_images=34394):
             print(f"Loaded {i}/{len(files)}")
         
         try:
-            img = Image.open(os.path.join(data_dir, filename))
+            img = Image.open(os.path.join(data_dir, filename)).convert('RGB')
             images.append(transform(img))
 
         except Exception as e:
@@ -63,9 +96,10 @@ def load_images(data_dir, max_images=34394):
 def create_model():
     #Autoencoder
 
+    # Custom Encoder
     encoder = nn.Sequential(
-        # Input: 1x128x128 for grayscale spectrogram
-        nn.Conv2d(1, 64, 3, padding=1),
+        # Input: 3x128x128 for RGB spectrogram
+        nn.Conv2d(3, 64, 3, padding=1),
         nn.BatchNorm2d(64),
         nn.ReLU(),
         nn.Conv2d(64, 64, 3, padding=1),
@@ -102,7 +136,7 @@ def create_model():
         nn.ReLU()
     )
 
-    # Improved decoder
+    # Custom Decoder
     decoder = nn.Sequential(
         nn.Linear(512, 1024),
         nn.BatchNorm1d(1024),
@@ -128,7 +162,7 @@ def create_model():
         nn.BatchNorm2d(32),
         nn.ReLU(),
 
-        nn.ConvTranspose2d(32, 1, 4, stride=2, padding=1),     # 3x128x128
+        nn.ConvTranspose2d(32, 3, 4, stride=2, padding=1),     # 3x128x128
         nn.Tanh()
     )
     
@@ -138,43 +172,38 @@ def contrastive_loss(features, temperature=0.5):
     #Simple contrastive loss
 
     batch_size = features.size(0)
-    
+
     # Normalize features
-    features_norm = F.normalize(features, dim=1)
-    
+    features_norm = Fun.normalize(features, dim=1)
+
     # Compute similarity matrix
     similarity_matrix = torch.matmul(features_norm, features_norm.t()) / temperature
-    
+
     # Remove diagonal elements
     mask = torch.eye(batch_size, device=features.device).bool()
     similarity_matrix = similarity_matrix.masked_fill(mask, -float('inf'))
-    
+
     # Encourage diversity (lower similarity between different samples)
     loss = torch.mean(torch.max(similarity_matrix, dim=1)[0])
-    
+
     return loss
 
 def train_model(encoder, decoder, data, device, epochs=10):
-    """Enhanced training with better loss and techniques"""
+    # Training loop
     encoder = encoder.to(device)
     decoder = decoder.to(device)
     data = data.to(device)
-    
-    # Better optimizer with scheduling
-    # optimizer = optim.AdamW(list(encoder.parameters()) + list(decoder.parameters()),
-    #                        lr=0.001, weight_decay=0.01)
-    optimizer = optim.AdamW(
-        list(encoder.parameters()) + list(decoder.parameters()),
-        lr=0.0003,  # learning rate
-        weight_decay=0.05,
-        betas=(0.9, 0.999)
-    )
+
+    # AdamW optimizer with different learning rates for encoder and decoder
+    optimizer = optim.AdamW([
+        {"params": encoder.parameters(), "lr": 2e-3, "weight_decay": 0.01},
+        {"params": decoder.parameters(), "lr": 5e-4, "weight_decay": 0.0},
+    ], betas=(0.9, 0.95))
 
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     
     # Loss function
-    mse_criterion = nn.MSELoss()
-    
+    mse_loss = nn.MSELoss()
     best_loss = float('inf')
     batch_size = 32  # Smaller batch size for better gradient estimates
     
@@ -186,13 +215,12 @@ def train_model(encoder, decoder, data, device, epochs=10):
         total_contrast_loss = 0
         num_batches = 0
         
-        # Shuffle data each epoch
+        # Shuffle data each epoch so that the model doesn't learn order of data
         indices = torch.randperm(len(data))
         data_shuffled = data[indices]
         
         for i in range(0, len(data_shuffled), batch_size):
             batch = data_shuffled[i:i+batch_size]
-            
             optimizer.zero_grad()
             
             # Forward pass
@@ -200,12 +228,13 @@ def train_model(encoder, decoder, data, device, epochs=10):
             reconstructed = decoder(features)
             
             # Combined loss
-            recon_loss = mse_criterion(reconstructed, batch)
+            recon_loss = mse_loss(reconstructed, batch)
             contrast_loss = contrastive_loss(features)
             
             # Weighted combination
             total_batch_loss = recon_loss + 0.1 * contrast_loss
-            
+
+            # Backward pass
             total_batch_loss.backward()
             
             # Gradient clipping
@@ -226,7 +255,7 @@ def train_model(encoder, decoder, data, device, epochs=10):
         
         print(f'Epoch {epoch+1:2d}: Total Loss (avg)={avg_loss:.4f}, Reconstruction Loss (avg)={avg_recon:.4f}, Contrastive Loss (avg)={avg_contrast:.4f}, LR={scheduler.get_last_lr()[0]:.6f}')
         
-        # Save if best
+        # Save if best model
         if avg_loss < best_loss:
             best_loss = avg_loss
             torch.save({
@@ -235,7 +264,7 @@ def train_model(encoder, decoder, data, device, epochs=10):
                 'loss': avg_loss,
                 'epoch': epoch
             }, 'trained_model.pth')
-            print(f'  ✓ Best model saved! Loss: {avg_loss:.4f}')
+            print(f'-> BEST MODEL SAVED! Loss: {avg_loss:.4f}')
     
     return encoder, decoder
 
@@ -251,11 +280,9 @@ def extract_features(encoder, data, device):
         for i in range(0, len(data), batch_size):
             batch = data[i:i+batch_size]
 
-            # Extract features
             feat = encoder(batch)
             features_list.append(feat.cpu().numpy())
 
-            # Also extract features from horizontally flipped images for robustness
             batch_flipped = torch.flip(batch, dims=[3])  # Flip horizontally
             feat_flipped = encoder(batch_flipped)
             features_list.append(feat_flipped.cpu().numpy())
@@ -263,12 +290,11 @@ def extract_features(encoder, data, device):
     features = np.concatenate(features_list)
 
     # Remove duplicates and normalize
-    features = features[:len(data)]  # Keep only original samples
+    features = features[:len(data)]
 
     return features
 
 def clustering_comparison(features):
-    """Enhanced clustering with better parameters"""
     scaler = StandardScaler()
     features_scaled = scaler.fit_transform(features)
     
@@ -278,38 +304,19 @@ def clustering_comparison(features):
     
     print(f"Features reduced from {features.shape[1]} to {features_pca.shape[1]} dimensions")
     print(f"PCA explained variance: {pca.explained_variance_ratio_.sum():.3f}")
-    
-    # Better algorithm parameters
-    # algorithms = {
-    #     'K-Means': KMeans(n_clusters=8, random_state=42, n_init=20, max_iter=500),
-    #     'GMM': GaussianMixture(n_components=8, random_state=42, max_iter=200, covariance_type='diag'),
-    #     'DBSCAN': DBSCAN(eps=0.3, min_samples=3),  # Better parameters
-    #     'Agglomerative': AgglomerativeClustering(n_clusters=8, linkage='ward'),
-    #     'Spectral': SpectralClustering(n_clusters=8, random_state=42, affinity='nearest_neighbors', n_neighbors=10)
-    # }
+
+    # Define clustering algorithms to compare
     algorithms = {
-        'K-Means': KMeans(
-            n_clusters=8, random_state=42, n_init=50, max_iter=1000
-        ),
-
+        'K-Means': KMeans(n_clusters=8, random_state=42, n_init=50, max_iter=1000),
         'GMM': GaussianMixture(n_components=8, random_state=42, max_iter=200, covariance_type='diag'),
-
-        'DBSCAN': DBSCAN(
-            eps=0.5, min_samples=5, n_jobs=-1
-        ),
-
-        'Agglomerative': AgglomerativeClustering(
-            n_clusters=8, linkage='ward'
-        ),
-
-        'Spectral': SpectralClustering(
-            n_clusters=8, random_state=42,
-            affinity='nearest_neighbors', n_neighbors=15, assign_labels='kmeans'
-        ),
+        'DBSCAN': DBSCAN(eps=0.5, min_samples=5, n_jobs=-1),
+        'Agglomerative': AgglomerativeClustering(n_clusters=8, linkage='ward'),
+        'Spectral': SpectralClustering(n_clusters=8, random_state=42,affinity='nearest_neighbors', n_neighbors=15, assign_labels='kmeans'),
     }
     
     results = {}
-    print("\nAdvanced clustering comparison:")
+
+    print("\nClustering comparison:")
     print("-" * 60)
     
     for name, algorithm in algorithms.items():
@@ -369,46 +376,6 @@ def clustering_comparison(features):
     
     return results, best_labels, best_algo, features_pca
 
-# def visualize_comparison(features, results, best_labels, best_algo):
-#     pca_viz = PCA(n_components=2)
-#     features_2d = pca_viz.fit_transform(features)
-#
-#     valid_results = {name: result for name, result in results.items() if result is not None}
-#     n_algorithms = len(valid_results)
-#
-#     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-#     axes = axes.flatten()
-#
-#     for i, (name, result) in enumerate(valid_results.items()):
-#         if i >= len(axes):
-#             break
-#
-#         ax = axes[i]
-#         labels = result['labels']
-#
-#         # Better scatter plot
-#         scatter = ax.scatter(features_2d[:, 0], features_2d[:, 1],
-#                            c=labels, cmap='tab10', s=15, alpha=0.7, edgecolors='k', linewidth=0.1)
-#
-#         title = f'{name}\nClusters: {result["n_clusters"]}, Silhouette: {result["silhouette_score"]:.3f}'
-#         if name == best_algo:
-#             title = f'⭐ {title} ⭐'
-#             ax.set_facecolor('#fffacd')
-#
-#         ax.set_title(title, fontsize=11, fontweight='bold' if name == best_algo else 'normal')
-#         ax.set_xlabel('PCA Component 1')
-#         ax.set_ylabel('PCA Component 2')
-#         ax.grid(True, alpha=0.3)
-#
-#     # Remove empty subplots
-#     for j in range(i+1, len(axes)):
-#         fig.delaxes(axes[j])
-#
-#     plt.suptitle('Enhanced Cough Sound Clustering Comparison', fontsize=16, fontweight='bold')
-#     plt.tight_layout()
-#     plt.savefig('improved_clustering_comparison.png', dpi=200, bbox_inches='tight')
-#     plt.show()
-#     print("Enhanced comparison saved as 'improved_clustering_comparison.png'")
 def visualize_comparison(features, results):
     pca_viz = PCA(n_components=2)
     features_2d = pca_viz.fit_transform(features)
@@ -438,17 +405,16 @@ def visualize_comparison(features, results):
         print(f"Saved: {filename}")
 
 def main():
-    """Enhanced main function"""
     # Setup
     device = setup()
     data_dir = "/mnt/d/Productivity/CSE715/cough-type-clustering/cough_dataset"
     
-    # Load more data with better preprocessing
+    # Load data
     print("\n1. Loading images...")
-    images = load_images(data_dir, max_images=10000)  # More samples
+    images = load_images(data_dir, max_images=10000)
     print(f"Loaded {len(images)} images of shape {images[0].shape}")
     
-    # Create improved model
+    # Create model
     print("\n2. Creating model...")
     encoder, decoder = create_model()
     
@@ -470,7 +436,7 @@ def main():
     visualize_comparison(features_processed, results)
     
     print(f"\n✅ RESULTS!")
-    print(f"✅ Best model saved as 'model.pth'")
+    print(f"✅ Best model saved as 'trained_model.pth'")
     print(f"✅ Best clustering algorithm: {best_algo}")
 
 if __name__ == "__main__":
