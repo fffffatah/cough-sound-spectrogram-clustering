@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-import hdbscan
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, SpectralClustering
 from sklearn.mixture import GaussianMixture
@@ -51,7 +50,6 @@ def clustering_comparison(features):
         'K-Means': KMeans(n_clusters=8, random_state=42, n_init=50, max_iter=1000),
         'GMM': GaussianMixture(n_components=8, random_state=42, max_iter=200, covariance_type='diag'),
         'DBSCAN': DBSCAN(eps=0.5, min_samples=5, n_jobs=-1),
-        'HDBSCAN': hdbscan.HDBSCAN(min_cluster_size=5, min_samples=3, cluster_selection_epsilon=0.0),
         'Agglomerative': AgglomerativeClustering(n_clusters=8, linkage='ward'),
         'Spectral': SpectralClustering(n_clusters=8, random_state=42, affinity='nearest_neighbors', n_neighbors=15,
                                        assign_labels='kmeans'),
