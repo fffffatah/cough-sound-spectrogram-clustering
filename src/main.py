@@ -12,7 +12,7 @@ def setup():
 def main():
     # Setup
     device = setup()
-    data_dir = "/mnt/d/Productivity/CSE715/cough-type-clustering/cough_dataset"
+    data_dir = os.path.dirname(__file__).replace('src','cough_dataset')
     
     # Load data
     print("\n1. Loading images...")

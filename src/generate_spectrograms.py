@@ -46,5 +46,5 @@ def generate_spectrograms(input_directory):
             except Exception as e:
                 print(f"Error processing {filename}: {e}")
 
-audio_directory = '/mnt/d/Productivity/CSE715/cough-type-clustering/cough_dataset/'
+audio_directory = os.path.dirname(__file__).replace('src','cough_dataset')
 generate_spectrograms(audio_directory)
