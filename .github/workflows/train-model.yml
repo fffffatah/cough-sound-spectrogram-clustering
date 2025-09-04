@@ -1,0 +1,108 @@
+name: Train Model
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  train-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          sudo apt-get update
+          sudo apt-get install megatools
+
+      - name: Download and Extract Dataset
+        run: |
+          megatools dl "https://mega.nz/file/4bg0wRZK#pXxCI6C-sFniXXB0yBAjINtPmyl8qo7SG_OsxdtSbDE"
+          unzip cough_dataset.zip -d .
+          rm cough_dataset.zip
+          echo "Downloaded and extracted dataset."
+
+      - name: Train Model and Generate Visualizations
+        run: |
+          python -u src/main.py
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: v1.0.0-${{ github.run_number }}
+          release_name: Release v1.0.0-${{ github.run_number }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
+
+      - name: Upload Trained Model
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./trained_model.pth
+          asset_name: trained_model.pth
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
+
+      - name: Upload Agglomerative Visualization
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./Agglomerative_clustering.png
+          asset_name: Agglomerative_clustering.png
+          asset_content_type: image/png
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
+
+      - name: Upload DBSCAN Visualization
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./DBSCAN_clustering.png
+          asset_name: DBSCAN_clustering.png
+          asset_content_type: image/png
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
+
+      - name: Upload K-Means Visualization
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./K-Means_clustering.png
+          asset_name: K-Means_clustering.png
+          asset_content_type: image/png
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
+
+      - name: Upload Spectral Visualization
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./Spectral_clustering.png
+          asset_name: Spectral_clustering.png
+          asset_content_type: image/png
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
+
+      - name: Upload GMM Visualization
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./GMM_clustering.png
+          asset_name: GMM_clustering.png
+          asset_content_type: image/png
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
