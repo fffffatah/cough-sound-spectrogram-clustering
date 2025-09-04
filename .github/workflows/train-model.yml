@@ -57,17 +57,52 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
 
-      - name: Upload Visualizations
-        run: |
-          UPLOAD_URL="${{ steps.create_release.outputs.upload_url }}"
-          GITHUB_TOKEN="${{ secrets.MY_TOKEN }}"
-          for file in *.png; do
-            if [ -f "$file" ]; then
-              echo "Uploading $file..."
-              curl -X POST \
-                -H "Authorization: token $GITHUB_TOKEN" \
-                -H "Content-Type: image/png" \
-                --data-binary @"$file" \
-                "$UPLOAD_URL?name=$(basename "$file")"
-            fi
-          done
+      - name: Upload Agglomerative Visualization
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./Agglomerative_clustering.png
+          asset_name: Agglomerative_clustering.png
+          asset_content_type: image/png
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
+
+      - name: Upload DBSCAN Visualization
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./DBSCAN_clustering.png
+          asset_name: DBSCAN_clustering.png
+          asset_content_type: image/png
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
+
+      - name: Upload K-Means Visualization
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./K-Means_clustering.png
+          asset_name: K-Means_clustering.png
+          asset_content_type: image/png
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
+
+      - name: Upload Spectral Visualization
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./Spectral_clustering.png
+          asset_name: Spectral_clustering.png
+          asset_content_type: image/png
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
+
+      - name: Upload GMM Visualization
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./GMM_clustering.png
+          asset_name: GMM_clustering.png
+          asset_content_type: image/png
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
