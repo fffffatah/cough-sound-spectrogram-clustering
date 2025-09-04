@@ -48,11 +48,9 @@ def clustering_comparison(features):
     # Define clustering algorithms to compare
     algorithms = {
         'K-Means': KMeans(n_clusters=8, random_state=42, n_init=50, max_iter=1000),
-        'GMM': GaussianMixture(n_components=8, random_state=42, max_iter=200, covariance_type='diag'),
         'DBSCAN': DBSCAN(eps=0.5, min_samples=5, n_jobs=-1),
         'Agglomerative': AgglomerativeClustering(n_clusters=8, linkage='ward'),
-        'Spectral': SpectralClustering(n_clusters=8, random_state=42, affinity='nearest_neighbors', n_neighbors=15,
-                                       assign_labels='kmeans'),
+        'Spectral': SpectralClustering(n_clusters=8, random_state=42, affinity='nearest_neighbors', n_neighbors=15, assign_labels='kmeans'),
     }
 
     results = {}
@@ -62,11 +60,7 @@ def clustering_comparison(features):
 
     for name, algorithm in algorithms.items():
         try:
-            if name == 'GMM':
-                algorithm.fit(features_pca)
-                labels = algorithm.predict(features_pca)
-            else:
-                labels = algorithm.fit_predict(features_pca)
+            labels = algorithm.fit_predict(features_pca)
 
             # Calculate metrics
             n_clusters = len(np.unique(labels[labels >= 0]))
@@ -112,7 +106,7 @@ def clustering_comparison(features):
         print(f"Best algorithm: {best_algo} (Silhouette: {best_score:.3f})")
         best_labels = results[best_algo]['labels']
     else:
-        print("Using K-Means as fallback")
+        print("Using K-Means as default:")
         best_labels = results['K-Means']['labels'] if results['K-Means'] else None
         best_algo = 'K-Means'
 
