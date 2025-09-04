@@ -96,13 +96,3 @@ jobs:
           asset_content_type: image/png
         env:
           GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
-
-      - name: Upload GMM Visualization
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./GMM_clustering.png
-          asset_name: GMM_clustering.png
-          asset_content_type: image/png
-        env:
-          GITHUB_TOKEN: ${{ secrets.MY_TOKEN }}
